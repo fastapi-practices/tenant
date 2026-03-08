@@ -11,11 +11,12 @@ class Tenant(Base):
     """租户表"""
 
     __tablename__ = 'sys_tenant'
+    __table_args__ = (sa.Index('ix_sys_tenant_pkg_id', 'package_id'),)
 
     id: Mapped[id_key] = mapped_column(init=False)
     name: Mapped[str] = mapped_column(sa.String(64), unique=True, index=True, comment='租户名称')
     code: Mapped[str] = mapped_column(sa.String(64), unique=True, index=True, comment='租户编码')
-    package_id: Mapped[int] = mapped_column(sa.BigInteger, index=True, comment='套餐 ID')
+    package_id: Mapped[int] = mapped_column(sa.BigInteger, comment='套餐 ID')
     admin_user_id: Mapped[int | None] = mapped_column(sa.BigInteger, init=False, default=None, comment='管理员用户 ID')
     admin_username: Mapped[str | None] = mapped_column(sa.String(64), default=None, comment='管理员用户名')
     contact: Mapped[str | None] = mapped_column(sa.String(64), default=None, comment='联系人')
