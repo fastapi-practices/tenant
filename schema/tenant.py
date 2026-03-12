@@ -26,17 +26,8 @@ class CreateTenantParam(TenantSchemaBase):
     admin_password: str = Field(description='管理员密码')
 
 
-class UpdateTenantParam(SchemaBase):
+class UpdateTenantParam(TenantSchemaBase):
     """更新租户参数"""
-
-    package_id: int | None = Field(None, description='套餐 ID')
-    name: str | None = Field(None, description='租户名称')
-    contact: str | None = Field(None, description='联系人')
-    phone: str | None = Field(None, description='手机号')
-    domain: str | None = Field(None, description='租户域名')
-    expire_time: datetime | None = Field(None, description='过期时间')
-    status: StatusType | None = Field(None, description='状态')
-    remark: str | None = Field(None, description='备注')
 
 
 class UpdateTenantAdminPwdParam(SchemaBase):

@@ -21,14 +21,10 @@ class CreateTenantPackageParam(TenantPackageSchemaBase):
     menus: list[int] = Field(description='菜单 ID 列表')
 
 
-class UpdateTenantPackageParam(SchemaBase):
+class UpdateTenantPackageParam(TenantPackageSchemaBase):
     """更新租户套餐参数"""
 
-    name: str | None = Field(None, description='套餐名称')
-    sort: int | None = Field(None, description='排序')
-    status: StatusType | None = Field(None, description='状态')
-    menus: list[int] | None = Field(None, description='菜单 ID 列表')
-    remark: str | None = Field(None, description='备注')
+    menus: list[int] = Field(description='菜单 ID 列表')
 
 
 class GetTenantPackageDetail(TenantPackageSchemaBase):
@@ -40,4 +36,4 @@ class GetTenantPackageDetail(TenantPackageSchemaBase):
     created_time: datetime = Field(description='创建时间')
     updated_time: datetime | None = Field(None, description='更新时间')
 
-    menu_ids: list[int] = Field(default=[], description='关联的菜单 ID 列表')
+    menu_ids: list[int] = Field(default_factory=list, description='关联的菜单 ID 列表')

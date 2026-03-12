@@ -10,19 +10,16 @@ def register_tenant_sqlalchemy_listeners() -> None:
 
     @event.listens_for(Session, 'do_orm_execute', propagate=True)
     def _inject_tenant_filter(orm_execute_state: ORMExecuteState) -> None:
+        """为查询语句自动追加租户过滤条件"""
         if not orm_execute_state.is_select:
             return
         tenant_id = ctx.tenant_id
-        if tenant_id is None:
-            return
         mapper = orm_execute_state.bind_mapper
         if mapper and hasattr(mapper.entity, 'tenant_id'):
             orm_execute_state.statement = orm_execute_state.statement.where(mapper.entity.tenant_id == tenant_id)
 
     @event.listens_for(TenantMixin, 'before_insert', propagate=True)
     def _inject_tenant_id(mapper, connection, target) -> None:  # noqa: ANN001
-        tenant_id = ctx.tenant_id
-        if tenant_id is None:
-            return
+        """为新增模型自动注入当前租户 ID"""
         if hasattr(target, 'tenant_id') and target.tenant_id is None:
             target.tenant_id = ctx.tenant_id

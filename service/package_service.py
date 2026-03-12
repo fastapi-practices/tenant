@@ -1,10 +1,7 @@
 from typing import Any
 
-from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.admin.model import Role
-from backend.app.admin.model.m2m import role_menu
 from backend.common.exception import errors
 from backend.common.pagination import paging_data
 from backend.core.conf import settings
@@ -68,36 +65,24 @@ class TenantPackageService:
         if not package:
             raise errors.NotFoundError(msg='套餐不存在')
 
-        if obj.name and obj.name != package.name:
+        if obj.name != package.name:
             existing = await tenant_package_dao.get_by_name(db, obj.name)
             if existing:
                 raise errors.ForbiddenError(msg='套餐名称已存在')
 
         count = await tenant_package_dao.update(db, pk, obj)
+        await tenant_package_dao.update_menus(db, pk, obj.menus)
 
-        if obj.menus is not None:
-            await tenant_package_dao.update_menus(db, pk, obj.menus)
+        tenant_ids = await tenant_dao.get_ids_by_package_id(db, pk)
+        for tenant_id in tenant_ids:
+            await tenant_dao.sync_admin_role_menus(
+                db,
+                tenant_id=tenant_id,
+                role_name=settings.TENANT_ADMIN_DEFAULT_ROLE_NAME,
+                menu_ids=obj.menus,
+            )
 
-            tenant_ids = await tenant_dao.get_ids_by_package_id(db, pk)
-            for tenant_id in tenant_ids:
-                stmt = select(Role).where(
-                    Role.tenant_id == tenant_id, Role.name == settings.TENANT_ADMIN_DEFAULT_ROLE_NAME
-                )
-                admin_role = (await db.execute(stmt)).scalars().first()
-                if not admin_role:
-                    continue
-
-                await db.execute(
-                    delete(role_menu).where(role_menu.c.role_id == admin_role.id, role_menu.c.tenant_id == tenant_id)
-                )
-
-                if obj.menus:
-                    menu_data = [
-                        {'role_id': admin_role.id, 'menu_id': menu_id, 'tenant_id': tenant_id} for menu_id in obj.menus
-                    ]
-                    await db.execute(insert(role_menu), menu_data)
-
-        return count
+        return count or 1
 
     @staticmethod
     async def delete(*, db: AsyncSession, pk: int) -> int:

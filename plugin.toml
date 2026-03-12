@@ -11,4 +11,3 @@ router = ["v1"]
 
 [settings]
 TENANT_ADMIN_DEFAULT_ROLE_NAME = "租户管理员"
-TENANT_DEFAULT_ID = 0

@@ -71,7 +71,8 @@ class CRUDTenantPackage(CRUDPlus[TenantPackage]):
         :return:
         """
         dict_obj = obj.model_dump(exclude={'menus'})
-        new_package = await self.create_model(db, dict_obj)
+        new_package = self.model(**dict_obj)
+        db.add(new_package)
         await db.flush()
         return new_package
 
@@ -84,7 +85,7 @@ class CRUDTenantPackage(CRUDPlus[TenantPackage]):
         :param obj: 更新套餐参数
         :return:
         """
-        dict_obj = obj.model_dump(exclude={'menus'}, exclude_none=True)
+        dict_obj = obj.model_dump(exclude={'menus'})
         return await self.update_model(db, pk, dict_obj)
 
     async def delete(self, db: AsyncSession, pk: int) -> int:
