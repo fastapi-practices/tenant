@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+import bcrypt
 from sqlalchemy import Select, delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
@@ -9,6 +10,8 @@ from backend.app.admin.model.login_log import LoginLog
 from backend.app.admin.model.m2m import role_data_scope, role_menu, user_role
 from backend.app.admin.model.opera_log import OperaLog
 from backend.app.admin.model.user_password_history import UserPasswordHistory
+from backend.app.admin.utils.password_security import get_hash_password
+from backend.common.context import ctx
 from backend.plugin.tenant.model import Tenant
 from backend.plugin.tenant.schema.tenant import CreateTenantParam, UpdateTenantParam
 
@@ -110,7 +113,6 @@ class CRUDTenant(CRUDPlus[Tenant]):
         dict_obj.update({'code': code, 'admin_username': obj.admin_username})
         new_tenant = self.model(**dict_obj)
         db.add(new_tenant)
-        await db.flush()
         return new_tenant
 
     async def update(self, db: AsyncSession, pk: int, obj: UpdateTenantParam) -> int:
@@ -174,8 +176,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
                 [{'role_id': role_id, 'menu_id': menu_id, 'tenant_id': tenant_id} for menu_id in menu_ids],
             )
 
-    @staticmethod
-    async def sync_admin_role_menus(db: AsyncSession, *, tenant_id: int, role_name: str, menu_ids: list[int]) -> bool:
+    async def sync_admin_role_menus(self, db: AsyncSession, *, tenant_id: int, role_name: str, menu_ids: list[int]) -> bool:
         """
         同步租户管理员角色菜单
 
@@ -185,22 +186,26 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param menu_ids: 菜单 ID 列表
         :return:
         """
-        stmt = select(Role).where(Role.tenant_id == tenant_id, Role.name == role_name)
-        admin_role = (await db.execute(stmt)).scalars().first()
-        if not admin_role:
-            return False
+        current_tenant_id = ctx.tenant_id
+        ctx.tenant_id = tenant_id
+        try:
+            stmt = select(Role).where(Role.tenant_id == tenant_id, Role.name == role_name)
+            admin_role = (await db.execute(stmt)).scalars().first()
+            if not admin_role:
+                return False
 
-        await CRUDTenant.replace_role_menus(db, role_id=admin_role.id, tenant_id=tenant_id, menu_ids=menu_ids)
-        return True
+            await self.replace_role_menus(db, role_id=admin_role.id, tenant_id=tenant_id, menu_ids=menu_ids)
+            return True
+        finally:
+            ctx.tenant_id = current_tenant_id
 
-    @staticmethod
-    async def initialize_related_data(
+    async def init_related_data(
+        self,
         db: AsyncSession,
         *,
         tenant: Tenant,
         admin_username: str,
-        hashed_password: str,
-        salt: bytes,
+        admin_password: str,
         role_name: str,
         menu_ids: list[int],
     ) -> None:
@@ -210,8 +215,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param db: 数据库会话
         :param tenant: 租户对象
         :param admin_username: 管理员用户名
-        :param hashed_password: 加密密码
-        :param salt: 密码盐
+        :param admin_password: 管理员密码
         :param role_name: 管理员角色名称
         :param menu_ids: 菜单 ID 列表
         :return:
@@ -235,8 +239,10 @@ class CRUDTenant(CRUDPlus[Tenant]):
         db.add(role)
         await db.flush()
 
-        await CRUDTenant.replace_role_menus(db, role_id=role.id, tenant_id=tenant.id, menu_ids=menu_ids)
+        await self.replace_role_menus(db, role_id=role.id, tenant_id=tenant.id, menu_ids=menu_ids)
 
+        salt = bcrypt.gensalt()
+        hashed_password = get_hash_password(admin_password, salt)
         admin_user = User(
             username=admin_username,
             nickname=f'{tenant.name}管理员',
@@ -264,16 +270,17 @@ class CRUDTenant(CRUDPlus[Tenant]):
         )
 
     @staticmethod
-    async def update_admin_password(db: AsyncSession, *, user_id: int, hashed_password: str, salt: bytes) -> None:
+    async def update_admin_password(db: AsyncSession, *, user_id: int, password: str) -> None:
         """
         更新租户管理员密码
 
         :param db: 数据库会话
         :param user_id: 用户 ID
-        :param hashed_password: 加密密码
-        :param salt: 密码盐
+        :param password: 密码
         :return:
         """
+        salt = bcrypt.gensalt()
+        hashed_password = get_hash_password(password, salt)
         await db.execute(update(User).where(User.id == user_id).values(password=hashed_password, salt=salt))
 
     @staticmethod

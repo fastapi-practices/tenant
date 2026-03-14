@@ -1,5 +1,5 @@
 from sqlalchemy import event
-from sqlalchemy.orm import ORMExecuteState, Session
+from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
 
 from backend.common.context import ctx
 from backend.common.model import TenantMixin
@@ -14,9 +14,13 @@ def register_tenant_sqlalchemy_listeners() -> None:
         if not orm_execute_state.is_select:
             return
         tenant_id = ctx.tenant_id
-        mapper = orm_execute_state.bind_mapper
-        if mapper and hasattr(mapper.entity, 'tenant_id'):
-            orm_execute_state.statement = orm_execute_state.statement.where(mapper.entity.tenant_id == tenant_id)
+        orm_execute_state.statement = orm_execute_state.statement.options(
+            with_loader_criteria(
+                TenantMixin,
+                lambda cls: cls.tenant_id == tenant_id,
+                include_aliases=True,
+            )
+        )
 
     @event.listens_for(TenantMixin, 'before_insert', propagate=True)
     def _inject_tenant_id(mapper, connection, target) -> None:  # noqa: ANN001

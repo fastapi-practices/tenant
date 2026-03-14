@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
 
-from backend.common.pagination import DependsPagination, PageData, paging_data
+from backend.common.pagination import DependsPagination, PageData
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
 from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
@@ -59,10 +59,14 @@ async def get_tenants_paginated(
     package_id: Annotated[int | None, Query(description='套餐 ID')] = None,
     status: Annotated[int | None, Query(description='状态')] = None,
 ) -> ResponseSchemaModel[PageData[GetTenantDetail]]:
-    tenant_select = await tenant_service.get_select(
-        name=name, code=code, domain=domain, package_id=package_id, status=status
+    page_data = await tenant_service.get_list(
+        db=db,
+        name=name,
+        code=code,
+        domain=domain,
+        package_id=package_id,
+        status=status,
     )
-    page_data = await paging_data(db, tenant_select)
     return response_base.success(data=page_data)
 
 

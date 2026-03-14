@@ -41,23 +41,6 @@ class TenantService:
         return tenant.id if tenant else None
 
     @staticmethod
-    async def get_select(
-        *,
-        name: str | None = None,
-        code: str | None = None,
-        domain: str | None = None,
-        package_id: int | None = None,
-        status: int | None = None,
-    ) -> Select:
-        return await tenant_dao.get_select(
-            name=name,
-            code=code,
-            domain=domain,
-            package_id=package_id,
-            status=status,
-        )
-
-    @staticmethod
     async def get_list(
         *,
         db: AsyncSession,
@@ -101,15 +84,12 @@ class TenantService:
             code = text_captcha(6)
 
         tenant = await tenant_dao.create(db, obj, code)
-        salt = bcrypt.gensalt()
-        hashed_password = get_hash_password(obj.admin_password, salt)
         menu_ids = await tenant_package_dao.get_menu_ids(db, tenant.package_id)
-        await tenant_dao.initialize_related_data(
+        await tenant_dao.init_related_data(
             db,
             tenant=tenant,
             admin_username=obj.admin_username,
-            hashed_password=hashed_password,
-            salt=salt,
+            admin_password=obj.admin_password,
             role_name=settings.TENANT_ADMIN_DEFAULT_ROLE_NAME,
             menu_ids=menu_ids,
         )
@@ -158,10 +138,8 @@ class TenantService:
         if not tenant.admin_user_id:
             raise errors.NotFoundError(msg='租户管理员用户不存在')
 
-        salt = bcrypt.gensalt()
-        hashed_password = get_hash_password(password, salt)
         await tenant_dao.update_admin_password(
-            db, user_id=tenant.admin_user_id, hashed_password=hashed_password, salt=salt
+            db, user_id=tenant.admin_user_id, password=password
         )
 
     @staticmethod

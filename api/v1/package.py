@@ -3,13 +3,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query
 
 from backend.app.admin.schema.menu import GetMenuTree
-from backend.common.pagination import DependsPagination, PageData, paging_data
+from backend.common.pagination import DependsPagination, PageData
 from backend.common.response.response_schema import ResponseModel, ResponseSchemaModel, response_base
 from backend.common.security.jwt import DependsJwtAuth
 from backend.common.security.permission import RequestPermission
 from backend.common.security.rbac import DependsRBAC
 from backend.database.db import CurrentSession, CurrentSessionTransaction
-from backend.plugin.tenant.crud.crud_package import tenant_package_dao
 from backend.plugin.tenant.schema.package import (
     CreateTenantPackageParam,
     GetTenantPackageDetail,
@@ -49,8 +48,7 @@ async def get_tenant_packages_paginated(
     name: Annotated[str | None, Query(description='套餐名称')] = None,
     status: Annotated[int | None, Query(description='状态')] = None,
 ) -> ResponseSchemaModel[PageData[GetTenantPackageDetail]]:
-    package_select = await tenant_package_dao.get_select(name=name, status=status)
-    page_data = await paging_data(db, package_select)
+    page_data = await tenant_package_service.get_list(db=db, name=name, status=status)
     return response_base.success(data=page_data)
 
 

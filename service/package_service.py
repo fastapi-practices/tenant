@@ -1,5 +1,6 @@
 from typing import Any
 
+from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -18,14 +19,11 @@ from backend.utils.build_tree import get_tree_data
 
 class TenantPackageService:
     @staticmethod
-    async def get(*, db: AsyncSession, pk: int) -> dict[str, Any]:
+    async def get(*, db: AsyncSession, pk: int) -> TenantPackage:
         package = await tenant_package_dao.get(db, pk)
         if not package:
             raise errors.NotFoundError(msg='套餐不存在')
-        menu_ids = await tenant_package_dao.get_menu_ids(db, pk)
-        data = GetTenantPackageDetail.model_validate(package).model_dump()
-        data['menu_ids'] = menu_ids
-        return data
+        return package
 
     @staticmethod
     async def get_menu_tree(*, db: AsyncSession, pk: int) -> list[dict[str, Any] | None]:
