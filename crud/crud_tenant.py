@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 import bcrypt
+
 from sqlalchemy import Select, delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy_crud_plus import CRUDPlus
@@ -57,6 +58,27 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :return:
         """
         return await self.select_model_by_column(db, domain=domain)
+
+    async def get_by_package_id(self, db: AsyncSession, package_id: int) -> Tenant | None:
+        """
+        通过套餐 ID 获取租户
+
+        :param db: 数据库会话
+        :param package_id: 套餐 ID
+        :return:
+        """
+        return await self.select_model_by_column(db, package_id=package_id)
+
+    async def get_ids_by_package_id(self, db: AsyncSession, package_id: int) -> list[int]:
+        """
+        通过套餐 ID 获取租户 ID 列表
+
+        :param db: 数据库会话
+        :param package_id: 套餐 ID
+        :return:
+        """
+        tenants = await self.select_models(db, package_id=package_id)
+        return [t.id for t in tenants]
 
     async def get_select(
         self,
@@ -128,6 +150,20 @@ class CRUDTenant(CRUDPlus[Tenant]):
         """
         return await self.update_model(db, pk, obj)
 
+    @staticmethod
+    async def update_admin_password(db: AsyncSession, user_id: int, password: str) -> None:
+        """
+        更新租户管理员密码
+
+        :param db: 数据库会话
+        :param user_id: 用户 ID
+        :param password: 密码
+        :return:
+        """
+        salt = bcrypt.gensalt()
+        hashed_password = get_hash_password(password, salt)
+        await db.execute(update(User).where(User.id == user_id).values(password=hashed_password, salt=salt))
+
     async def delete(self, db: AsyncSession, pks: list[int]) -> int:
         """
         批量删除租户
@@ -138,29 +174,46 @@ class CRUDTenant(CRUDPlus[Tenant]):
         """
         return await self.delete_model_by_column(db, allow_multiple=True, id__in=pks)
 
-    async def get_by_package_id(self, db: AsyncSession, package_id: int) -> Tenant | None:
+    @staticmethod
+    async def delete_related_data(db: AsyncSession, tenant_id: int) -> None:
         """
-        通过套餐 ID 获取租户
+        删除租户关联数据
 
         :param db: 数据库会话
-        :param package_id: 套餐 ID
+        :param tenant_id: 租户 ID
         :return:
         """
-        return await self.select_model_by_column(db, package_id=package_id)
+        await db.execute(delete(user_role).where(user_role.c.tenant_id == tenant_id))
+        await db.execute(delete(role_menu).where(role_menu.c.tenant_id == tenant_id))
+        await db.execute(delete(role_data_scope).where(role_data_scope.c.tenant_id == tenant_id))
+        await db.execute(delete(UserPasswordHistory).where(UserPasswordHistory.tenant_id == tenant_id))
+        await db.execute(delete(OperaLog).where(OperaLog.tenant_id == tenant_id))
+        await db.execute(delete(LoginLog).where(LoginLog.tenant_id == tenant_id))
 
-    async def get_ids_by_package_id(self, db: AsyncSession, package_id: int) -> list[int]:
-        """
-        通过套餐 ID 获取租户 ID 列表
+        try:
+            from backend.plugin.oauth2.model.user_social import UserSocial
 
-        :param db: 数据库会话
-        :param package_id: 套餐 ID
-        :return:
-        """
-        tenants = await self.select_models(db, package_id=package_id)
-        return [t.id for t in tenants]
+            user_stmt = select(User.id).where(User.tenant_id == tenant_id)
+            user_result = await db.execute(user_stmt)
+            user_ids = [row[0] for row in user_result.all()]
+            if user_ids:
+                await db.execute(delete(UserSocial).where(UserSocial.user_id.in_(user_ids)))
+        except ImportError:
+            pass
+
+        try:
+            from backend.plugin.notice.model.notice import Notice
+
+            await db.execute(delete(Notice).where(Notice.tenant_id == tenant_id))
+        except ImportError:
+            pass
+
+        await db.execute(delete(User).where(User.tenant_id == tenant_id))
+        await db.execute(delete(Role).where(Role.tenant_id == tenant_id))
+        await db.execute(delete(Dept).where(Dept.tenant_id == tenant_id))
 
     @staticmethod
-    async def replace_role_menus(db: AsyncSession, *, role_id: int, tenant_id: int, menu_ids: list[int]) -> None:
+    async def replace_role_menus(db: AsyncSession, role_id: int, tenant_id: int, menu_ids: list[int]) -> None:
         """
         重建角色菜单关联
 
@@ -178,7 +231,13 @@ class CRUDTenant(CRUDPlus[Tenant]):
                 [{'role_id': role_id, 'menu_id': menu_id, 'tenant_id': tenant_id} for menu_id in menu_ids],
             )
 
-    async def sync_admin_role_menus(self, db: AsyncSession, *, tenant_id: int, role_name: str, menu_ids: list[int]) -> bool:
+    async def sync_admin_role_menus(
+        self,
+        db: AsyncSession,
+        tenant_id: int,
+        role_name: str,
+        menu_ids: list[int],
+    ) -> bool:
         """
         同步租户管理员角色菜单
 
@@ -196,7 +255,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
             if not admin_role:
                 return False
 
-            await self.replace_role_menus(db, role_id=admin_role.id, tenant_id=tenant_id, menu_ids=menu_ids)
+            await self.replace_role_menus(db, admin_role.id, tenant_id, menu_ids)
             await user_cache_manager.clear_by_role_id(db, [admin_role.id])
             return True
         finally:
@@ -205,7 +264,6 @@ class CRUDTenant(CRUDPlus[Tenant]):
     async def init_related_data(
         self,
         db: AsyncSession,
-        *,
         tenant: Tenant,
         admin_username: str,
         admin_password: str,
@@ -242,7 +300,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         db.add(role)
         await db.flush()
 
-        await self.replace_role_menus(db, role_id=role.id, tenant_id=tenant.id, menu_ids=menu_ids)
+        await self.replace_role_menus(db, role.id, tenant.id, menu_ids)
 
         salt = bcrypt.gensalt()
         hashed_password = get_hash_password(admin_password, salt)
@@ -271,58 +329,6 @@ class CRUDTenant(CRUDPlus[Tenant]):
             .where(Tenant.id == tenant.id)
             .values(admin_user_id=admin_user.id, admin_username=admin_username)
         )
-
-    @staticmethod
-    async def update_admin_password(db: AsyncSession, *, user_id: int, password: str) -> None:
-        """
-        更新租户管理员密码
-
-        :param db: 数据库会话
-        :param user_id: 用户 ID
-        :param password: 密码
-        :return:
-        """
-        salt = bcrypt.gensalt()
-        hashed_password = get_hash_password(password, salt)
-        await db.execute(update(User).where(User.id == user_id).values(password=hashed_password, salt=salt))
-
-    @staticmethod
-    async def delete_related_data(db: AsyncSession, *, tenant_id: int) -> None:
-        """
-        删除租户关联数据
-
-        :param db: 数据库会话
-        :param tenant_id: 租户 ID
-        :return:
-        """
-        await db.execute(delete(user_role).where(user_role.c.tenant_id == tenant_id))
-        await db.execute(delete(role_menu).where(role_menu.c.tenant_id == tenant_id))
-        await db.execute(delete(role_data_scope).where(role_data_scope.c.tenant_id == tenant_id))
-        await db.execute(delete(UserPasswordHistory).where(UserPasswordHistory.tenant_id == tenant_id))
-        await db.execute(delete(OperaLog).where(OperaLog.tenant_id == tenant_id))
-        await db.execute(delete(LoginLog).where(LoginLog.tenant_id == tenant_id))
-
-        try:
-            from backend.plugin.oauth2.model.user_social import UserSocial
-
-            user_stmt = select(User.id).where(User.tenant_id == tenant_id)
-            user_result = await db.execute(user_stmt)
-            user_ids = [row[0] for row in user_result.all()]
-            if user_ids:
-                await db.execute(delete(UserSocial).where(UserSocial.user_id.in_(user_ids)))
-        except ImportError:
-            pass
-
-        try:
-            from backend.plugin.notice.model.notice import Notice
-
-            await db.execute(delete(Notice).where(Notice.tenant_id == tenant_id))
-        except ImportError:
-            pass
-
-        await db.execute(delete(User).where(User.tenant_id == tenant_id))
-        await db.execute(delete(Role).where(Role.tenant_id == tenant_id))
-        await db.execute(delete(Dept).where(Dept.tenant_id == tenant_id))
 
 
 tenant_dao: CRUDTenant = CRUDTenant(Tenant)

@@ -1,12 +1,8 @@
 from typing import Any
 
-import bcrypt
-
 from fast_captcha import text_captcha
-from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.admin.utils.password_security import get_hash_password
 from backend.common.exception import errors
 from backend.common.pagination import paging_data
 from backend.core.conf import settings
@@ -87,11 +83,11 @@ class TenantService:
         menu_ids = await tenant_package_dao.get_menu_ids(db, tenant.package_id)
         await tenant_dao.init_related_data(
             db,
-            tenant=tenant,
-            admin_username=obj.admin_username,
-            admin_password=obj.admin_password,
-            role_name=settings.TENANT_ADMIN_DEFAULT_ROLE_NAME,
-            menu_ids=menu_ids,
+            tenant,
+            obj.admin_username,
+            obj.admin_password,
+            settings.TENANT_ADMIN_DEFAULT_ROLE_NAME,
+            menu_ids,
         )
 
     @staticmethod
@@ -120,9 +116,9 @@ class TenantService:
             menu_ids = await tenant_package_dao.get_menu_ids(db, obj.package_id)
             await tenant_dao.sync_admin_role_menus(
                 db,
-                tenant_id=pk,
-                role_name=settings.TENANT_ADMIN_DEFAULT_ROLE_NAME,
-                menu_ids=menu_ids,
+                pk,
+                settings.TENANT_ADMIN_DEFAULT_ROLE_NAME,
+                menu_ids,
             )
 
         return await tenant_dao.update(db, pk, obj)
@@ -138,9 +134,7 @@ class TenantService:
         if not tenant.admin_user_id:
             raise errors.NotFoundError(msg='租户管理员用户不存在')
 
-        await tenant_dao.update_admin_password(
-            db, user_id=tenant.admin_user_id, password=password
-        )
+        await tenant_dao.update_admin_password(db, tenant.admin_user_id, password)
 
     @staticmethod
     async def delete(*, db: AsyncSession, obj: DeleteTenantParam) -> int:
@@ -149,7 +143,7 @@ class TenantService:
             if not tenant:
                 continue
 
-            await tenant_dao.delete_related_data(db, tenant_id=pk)
+            await tenant_dao.delete_related_data(db, pk)
 
         return await tenant_dao.delete(db, obj.pks)
 

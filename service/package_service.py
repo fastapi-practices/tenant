@@ -1,6 +1,5 @@
 from typing import Any
 
-from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.common.exception import errors
@@ -11,7 +10,6 @@ from backend.plugin.tenant.crud.crud_tenant import tenant_dao
 from backend.plugin.tenant.model import TenantPackage
 from backend.plugin.tenant.schema.package import (
     CreateTenantPackageParam,
-    GetTenantPackageDetail,
     UpdateTenantPackageParam,
 )
 from backend.utils.build_tree import get_tree_data
@@ -75,9 +73,9 @@ class TenantPackageService:
         for tenant_id in tenant_ids:
             await tenant_dao.sync_admin_role_menus(
                 db,
-                tenant_id=tenant_id,
-                role_name=settings.TENANT_ADMIN_DEFAULT_ROLE_NAME,
-                menu_ids=obj.menus,
+                tenant_id,
+                settings.TENANT_ADMIN_DEFAULT_ROLE_NAME,
+                obj.menus,
             )
 
         return count or 1
