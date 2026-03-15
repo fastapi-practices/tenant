@@ -1,0 +1,13 @@
+[plugin]
+summary = "多租户"
+version = "0.0.1"
+description = "为系统提供多租户能力，包括租户管理、套餐管理、行级数据隔离"
+author = "wu-clan"
+tags = ["other"]
+database = ["mysql", "postgresql"]
+
+[app]
+router = ["v1"]
+
+[settings]
+TENANT_ADMIN_DEFAULT_ROLE_NAME = "租户管理员"
