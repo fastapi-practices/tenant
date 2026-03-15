@@ -1,5 +1,10 @@
 delete from sys_user_role where tenant_id > 0;
 delete from sys_role_menu where tenant_id > 0;
+delete from sys_role_data_scope where tenant_id > 0;
+delete from sys_user_password_history where tenant_id > 0;
+delete from sys_opera_log where tenant_id > 0;
+delete from sys_login_log where tenant_id > 0;
+delete from sys_notice where tenant_id > 0;
 delete from sys_user where tenant_id > 0;
 delete from sys_role where tenant_id > 0;
 delete from sys_dept where tenant_id > 0;
