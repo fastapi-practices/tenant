@@ -10,6 +10,7 @@ from backend.app.admin.model.login_log import LoginLog
 from backend.app.admin.model.m2m import role_data_scope, role_menu, user_role
 from backend.app.admin.model.opera_log import OperaLog
 from backend.app.admin.model.user_password_history import UserPasswordHistory
+from backend.app.admin.utils.cache import user_cache_manager
 from backend.app.admin.utils.password_security import get_hash_password
 from backend.common.context import ctx
 from backend.plugin.tenant.model import Tenant
@@ -113,6 +114,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         dict_obj.update({'code': code, 'admin_username': obj.admin_username})
         new_tenant = self.model(**dict_obj)
         db.add(new_tenant)
+        await db.flush()
         return new_tenant
 
     async def update(self, db: AsyncSession, pk: int, obj: UpdateTenantParam) -> int:
@@ -195,6 +197,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
                 return False
 
             await self.replace_role_menus(db, role_id=admin_role.id, tenant_id=tenant_id, menu_ids=menu_ids)
+            await user_cache_manager.clear_by_role_id(db, [admin_role.id])
             return True
         finally:
             ctx.tenant_id = current_tenant_id
