@@ -35,6 +35,12 @@ async def get_tenant_id(
     return response_base.success(data=tenant_id)
 
 
+@router.get('/all', summary='获取所有租户', dependencies=[DependsJwtAuth])
+async def get_all_tenants(db: CurrentSession) -> ResponseSchemaModel[list[GetTenantDetail]]:
+    data = await tenant_service.get_all(db=db)
+    return response_base.success(data=data)
+
+
 @router.get('/{pk}', summary='获取租户详情', dependencies=[DependsJwtAuth])
 async def get_tenant(
     db: CurrentSession, pk: Annotated[int, Path(description='租户 ID')]

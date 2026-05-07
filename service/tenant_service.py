@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any
 
 from fast_captcha import text_captcha
@@ -19,6 +20,11 @@ class TenantService:
         if not tenant:
             raise errors.NotFoundError(msg='租户不存在')
         return tenant
+
+    @staticmethod
+    async def get_all(*, db: AsyncSession) -> Sequence[Tenant]:
+        tenants = await tenant_dao.get_all(db)
+        return tenants
 
     @staticmethod
     async def get_by_code(*, db: AsyncSession, code: str) -> Tenant:
