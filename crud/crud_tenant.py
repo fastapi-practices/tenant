@@ -16,6 +16,7 @@ from backend.app.admin.utils.password_security import get_hash_password
 from backend.common.context import ctx
 from backend.plugin.tenant.model import Tenant
 from backend.plugin.tenant.schema.tenant import CreateTenantParam, UpdateTenantParam
+from backend.utils.timezone import timezone
 
 
 class CRUDTenant(CRUDPlus[Tenant]):
@@ -27,7 +28,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param pk: 租户 ID
         :return:
         """
-        return await self.select_model(db, pk)
+        return await self.select_model(db, pk, deleted=0)
 
     async def get_by_name(self, db: AsyncSession, name: str) -> Tenant | None:
         """
@@ -37,7 +38,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param name: 租户名称
         :return:
         """
-        return await self.select_model_by_column(db, name=name)
+        return await self.select_model_by_column(db, name=name, deleted=0)
 
     async def get_by_code(self, db: AsyncSession, code: str) -> Tenant | None:
         """
@@ -47,7 +48,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param code: 租户编码
         :return:
         """
-        return await self.select_model_by_column(db, code=code)
+        return await self.select_model_by_column(db, code=code, deleted=0)
 
     async def get_by_domain(self, db: AsyncSession, domain: str) -> Tenant | None:
         """
@@ -57,7 +58,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param domain: 租户域名
         :return:
         """
-        return await self.select_model_by_column(db, domain=domain)
+        return await self.select_model_by_column(db, domain=domain, deleted=0)
 
     async def get_by_package_id(self, db: AsyncSession, package_id: int) -> Tenant | None:
         """
@@ -67,7 +68,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param package_id: 套餐 ID
         :return:
         """
-        return await self.select_model_by_column(db, package_id=package_id)
+        return await self.select_model_by_column(db, package_id=package_id, deleted=0)
 
     async def get_ids_by_package_id(self, db: AsyncSession, package_id: int) -> list[int]:
         """
@@ -77,7 +78,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param package_id: 套餐 ID
         :return:
         """
-        tenants = await self.select_models(db, package_id=package_id)
+        tenants = await self.select_models(db, package_id=package_id, deleted=0)
         return [t.id for t in tenants]
 
     async def get_select(
@@ -99,7 +100,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param status: 状态
         :return:
         """
-        filters = {}
+        filters = {'deleted': 0}
 
         if name is not None:
             filters.update(name__like=f'%{name}%')
@@ -121,7 +122,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param db: 数据库会话
         :return:
         """
-        return await self.select_models(db)
+        return await self.select_models(db, deleted=0)
 
     async def create(self, db: AsyncSession, obj: CreateTenantParam, code: str) -> Tenant:
         """
@@ -148,7 +149,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param obj: 更新租户参数
         :return:
         """
-        return await self.update_model(db, pk, obj)
+        return await self.update_model_by_column(db, obj, id=pk, deleted=0)
 
     @staticmethod
     async def update_admin_password(db: AsyncSession, user_id: int, password: str) -> None:
@@ -172,7 +173,17 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param pks: 租户 ID 列表
         :return:
         """
-        return await self.delete_model_by_column(db, allow_multiple=True, id__in=pks)
+        return await self.delete_model_by_column(
+            db,
+            allow_multiple=True,
+            logical_deletion=True,
+            deleted_flag_column='deleted',
+            deleted_flag_value=self.model.id,
+            deleted_at_column='deleted_time',
+            deleted_at_factory=timezone.now(),
+            id__in=pks,
+            deleted=0,
+        )
 
     @staticmethod
     async def delete_related_data(db: AsyncSession, tenant_id: int) -> None:
@@ -281,54 +292,56 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param menu_ids: 菜单 ID 列表
         :return:
         """
-        dept = Dept(
-            name=tenant.name,
-            sort=0,
-            status=1,
-            del_flag=False,
-            tenant_id=tenant.id,
-        )
-        db.add(dept)
-        await db.flush()
+        current_tenant_id = ctx.tenant_id
+        ctx.tenant_id = tenant.id
+        try:
+            dept = Dept(
+                name=tenant.name,
+                sort=0,
+                status=1,
+                deleted=0,
+            )
+            db.add(dept)
+            await db.flush()
 
-        role = Role(
-            name=role_name,
-            status=1,
-            is_filter_scopes=False,
-            tenant_id=tenant.id,
-        )
-        db.add(role)
-        await db.flush()
+            role = Role(
+                name=role_name,
+                status=1,
+                is_filter_scopes=False,
+            )
+            db.add(role)
+            await db.flush()
 
-        await self.replace_role_menus(db, role.id, tenant.id, menu_ids)
+            await self.replace_role_menus(db, role.id, tenant.id, menu_ids)
 
-        salt = bcrypt.gensalt()
-        hashed_password = get_hash_password(admin_password, salt)
-        admin_user = User(
-            username=admin_username,
-            nickname=f'{tenant.name}管理员',
-            password=hashed_password,
-            salt=salt,
-            status=1,
-            is_superuser=False,
-            is_staff=True,
-            is_multi_login=False,
-            dept_id=dept.id,
-            tenant_id=tenant.id,
-        )
-        db.add(admin_user)
-        await db.flush()
+            salt = bcrypt.gensalt()
+            hashed_password = get_hash_password(admin_password, salt)
+            admin_user = User(
+                username=admin_username,
+                nickname=f'{tenant.name}管理员',
+                password=hashed_password,
+                salt=salt,
+                status=1,
+                is_superuser=False,
+                is_staff=True,
+                is_multi_login=False,
+                dept_id=dept.id,
+            )
+            db.add(admin_user)
+            await db.flush()
 
-        await db.execute(
-            insert(user_role),
-            [{'user_id': admin_user.id, 'role_id': role.id, 'tenant_id': tenant.id}],
-        )
+            await db.execute(
+                insert(user_role),
+                [{'user_id': admin_user.id, 'role_id': role.id, 'tenant_id': tenant.id}],
+            )
 
-        await db.execute(
-            update(Tenant)
-            .where(Tenant.id == tenant.id)
-            .values(admin_user_id=admin_user.id, admin_username=admin_username)
-        )
+            await db.execute(
+                update(Tenant)
+                .where(Tenant.id == tenant.id)
+                .values(admin_user_id=admin_user.id, admin_username=admin_username)
+            )
+        finally:
+            ctx.tenant_id = current_tenant_id
 
 
 tenant_dao: CRUDTenant = CRUDTenant(Tenant)

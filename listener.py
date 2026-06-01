@@ -3,6 +3,7 @@ from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
 
 from backend.common.context import ctx
 from backend.common.model import TenantMixin
+from backend.core.conf import settings
 
 
 def register_tenant_sqlalchemy_listeners() -> None:
@@ -12,6 +13,8 @@ def register_tenant_sqlalchemy_listeners() -> None:
     def _inject_tenant_filter(orm_execute_state: ORMExecuteState) -> None:
         """为查询语句自动追加租户过滤条件"""
         if not orm_execute_state.is_select:
+            return
+        if not settings.TENANT_ENABLED:
             return
         tenant_id = ctx.tenant_id
         orm_execute_state.statement = orm_execute_state.statement.options(
@@ -24,6 +27,8 @@ def register_tenant_sqlalchemy_listeners() -> None:
 
     @event.listens_for(TenantMixin, 'before_insert', propagate=True)
     def _inject_tenant_id(mapper, connection, target) -> None:  # noqa: ANN001
-        """为新增模型自动注入当前租户 ID"""
+        """为新增加载租户 ID"""
+        if not settings.TENANT_ENABLED:
+            return
         if hasattr(target, 'tenant_id') and target.tenant_id is None:
             target.tenant_id = ctx.tenant_id

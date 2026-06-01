@@ -8,6 +8,7 @@ from backend.app.admin.model import Menu
 from backend.plugin.tenant.model import TenantPackage
 from backend.plugin.tenant.model.m2m import package_menu
 from backend.plugin.tenant.schema.package import CreateTenantPackageParam, UpdateTenantPackageParam
+from backend.utils.timezone import timezone
 
 
 class CRUDTenantPackage(CRUDPlus[TenantPackage]):
@@ -19,7 +20,7 @@ class CRUDTenantPackage(CRUDPlus[TenantPackage]):
         :param pk: 套餐 ID
         :return:
         """
-        return await self.select_model(db, pk)
+        return await self.select_model(db, pk, deleted=0)
 
     async def get_by_name(self, db: AsyncSession, name: str) -> TenantPackage | None:
         """
@@ -29,7 +30,7 @@ class CRUDTenantPackage(CRUDPlus[TenantPackage]):
         :param name: 套餐名称
         :return:
         """
-        return await self.select_model_by_column(db, name=name)
+        return await self.select_model_by_column(db, name=name, deleted=0)
 
     async def get_select(
         self,
@@ -44,7 +45,7 @@ class CRUDTenantPackage(CRUDPlus[TenantPackage]):
         :param status: 状态
         :return:
         """
-        filters = {}
+        filters = {'deleted': 0}
 
         if name is not None:
             filters.update(name__like=f'%{name}%')
@@ -60,7 +61,7 @@ class CRUDTenantPackage(CRUDPlus[TenantPackage]):
         :param db: 数据库会话
         :return:
         """
-        return await self.select_models(db)
+        return await self.select_models(db, deleted=0)
 
     async def create(self, db: AsyncSession, obj: CreateTenantPackageParam) -> TenantPackage:
         """
@@ -86,7 +87,7 @@ class CRUDTenantPackage(CRUDPlus[TenantPackage]):
         :return:
         """
         dict_obj = obj.model_dump(exclude={'menus'})
-        return await self.update_model(db, pk, dict_obj)
+        return await self.update_model_by_column(db, dict_obj, id=pk, deleted=0)
 
     async def delete(self, db: AsyncSession, pk: int) -> int:
         """
@@ -96,7 +97,16 @@ class CRUDTenantPackage(CRUDPlus[TenantPackage]):
         :param pk: 套餐 ID
         :return:
         """
-        return await self.delete_model(db, pk)
+        return await self.delete_model_by_column(
+            db,
+            logical_deletion=True,
+            deleted_flag_column='deleted',
+            deleted_flag_value=self.model.id,
+            deleted_at_column='deleted_time',
+            deleted_at_factory=timezone.now(),
+            id=pk,
+            deleted=0,
+        )
 
     @staticmethod
     async def get_menu_ids(db: AsyncSession, package_id: int) -> list[int]:
