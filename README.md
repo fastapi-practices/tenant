@@ -31,6 +31,11 @@ TENANT_ENABLED: bool
 TENANT_ADMIN_DEFAULT_ROLE_NAME: str
 ```
 
+## 配置项说明
+
+- `TENANT_ADMIN_DEFAULT_ROLE_NAME`：控制新建租户时初始化的管理员角色名称
+- `TENANT_ENABLED`：控制是否启用多租户数据隔离能力
+
 ## 使用方式
 
 1. 安装并启用插件后，重启后端服务
