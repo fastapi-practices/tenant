@@ -12,6 +12,14 @@
 
 ## 配置说明
 
+插件目录下 `plugin.toml` 的 `[settings]` 中包含以下内容：
+
+```toml
+[settings]
+TENANT_ENABLED = true
+TENANT_ADMIN_DEFAULT_ROLE_NAME = '租户管理员'
+```
+
 在 `backend/core/conf.py` 中添加以下内容：
 
 ```python
@@ -21,14 +29,6 @@
 # 基础配置（in plugin.toml）
 TENANT_ENABLED: bool
 TENANT_ADMIN_DEFAULT_ROLE_NAME: str
-```
-
-插件目录下 `plugin.toml` 的 `[settings]` 中包含以下内容：
-
-```toml
-[settings]
-TENANT_ENABLED = true
-TENANT_ADMIN_DEFAULT_ROLE_NAME = '租户管理员'
 ```
 
 ## 使用方式
