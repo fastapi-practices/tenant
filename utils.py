@@ -1,15 +1,22 @@
-from typing import Any
+from collections.abc import Generator
+from contextlib import contextmanager
 
 from backend.common.context import ctx
 
 
-def get_tenant_dict(obj: dict[str, Any]) -> dict[str, Any]:
+@contextmanager
+def tenant_context(tenant_id: int) -> Generator[None, None, None]:
     """
-    向数据字典中注入 tenant_id
+    在指定租户的上下文下执行操作
 
-    :param obj: 数据字典
+    租户隔离由全局监听器按当前租户过滤，跨租户操作需要显式切换上下文
+
+    :param tenant_id: 租户 ID
     :return:
     """
-    if 'tenant_id' not in obj:
-        obj['tenant_id'] = ctx.tenant_id
-    return obj
+    origin_tenant_id = ctx.tenant_id
+    ctx.tenant_id = tenant_id
+    try:
+        yield
+    finally:
+        ctx.tenant_id = origin_tenant_id

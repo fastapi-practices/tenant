@@ -13,9 +13,9 @@ from backend.app.admin.model.opera_log import OperaLog
 from backend.app.admin.model.user_password_history import UserPasswordHistory
 from backend.app.admin.utils.cache import user_cache_manager
 from backend.app.admin.utils.password_security import get_hash_password
-from backend.common.context import ctx
 from backend.plugin.tenant.model import Tenant
 from backend.plugin.tenant.schema.tenant import CreateTenantParam, UpdateTenantParam
+from backend.plugin.tenant.utils import tenant_context
 from backend.utils.timezone import timezone
 
 
@@ -194,34 +194,36 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param tenant_id: 租户 ID
         :return:
         """
-        await db.execute(delete(user_role).where(user_role.c.tenant_id == tenant_id))
-        await db.execute(delete(role_menu).where(role_menu.c.tenant_id == tenant_id))
-        await db.execute(delete(role_data_scope).where(role_data_scope.c.tenant_id == tenant_id))
-        await db.execute(delete(UserPasswordHistory).where(UserPasswordHistory.tenant_id == tenant_id))
-        await db.execute(delete(OperaLog).where(OperaLog.tenant_id == tenant_id))
-        await db.execute(delete(LoginLog).where(LoginLog.tenant_id == tenant_id))
+        # 跨租户删除需要切换到目标租户，否则隔离过滤会把关联数据全部跳过
+        with tenant_context(tenant_id):
+            await db.execute(delete(user_role).where(user_role.c.tenant_id == tenant_id))
+            await db.execute(delete(role_menu).where(role_menu.c.tenant_id == tenant_id))
+            await db.execute(delete(role_data_scope).where(role_data_scope.c.tenant_id == tenant_id))
+            await db.execute(delete(UserPasswordHistory).where(UserPasswordHistory.tenant_id == tenant_id))
+            await db.execute(delete(OperaLog).where(OperaLog.tenant_id == tenant_id))
+            await db.execute(delete(LoginLog).where(LoginLog.tenant_id == tenant_id))
 
-        try:
-            from backend.plugin.oauth2.model.user_social import UserSocial
+            try:
+                from backend.plugin.oauth2.model.user_social import UserSocial
 
-            user_stmt = select(User.id).where(User.tenant_id == tenant_id)
-            user_result = await db.execute(user_stmt)
-            user_ids = [row[0] for row in user_result.all()]
-            if user_ids:
-                await db.execute(delete(UserSocial).where(UserSocial.user_id.in_(user_ids)))
-        except ImportError:
-            pass
+                user_stmt = select(User.id).where(User.tenant_id == tenant_id)
+                user_result = await db.execute(user_stmt)
+                user_ids = [row[0] for row in user_result.all()]
+                if user_ids:
+                    await db.execute(delete(UserSocial).where(UserSocial.user_id.in_(user_ids)))
+            except ImportError:
+                pass
 
-        try:
-            from backend.plugin.notice.model.notice import Notice
+            try:
+                from backend.plugin.notice.model.notice import Notice
 
-            await db.execute(delete(Notice).where(Notice.tenant_id == tenant_id))
-        except ImportError:
-            pass
+                await db.execute(delete(Notice).where(Notice.tenant_id == tenant_id))
+            except ImportError:
+                pass
 
-        await db.execute(delete(User).where(User.tenant_id == tenant_id))
-        await db.execute(delete(Role).where(Role.tenant_id == tenant_id))
-        await db.execute(delete(Dept).where(Dept.tenant_id == tenant_id))
+            await db.execute(delete(User).where(User.tenant_id == tenant_id))
+            await db.execute(delete(Role).where(Role.tenant_id == tenant_id))
+            await db.execute(delete(Dept).where(Dept.tenant_id == tenant_id))
 
     @staticmethod
     async def replace_role_menus(db: AsyncSession, role_id: int, tenant_id: int, menu_ids: list[int]) -> None:
@@ -258,9 +260,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param menu_ids: 菜单 ID 列表
         :return:
         """
-        current_tenant_id = ctx.tenant_id
-        ctx.tenant_id = tenant_id
-        try:
+        with tenant_context(tenant_id):
             stmt = select(Role).where(Role.tenant_id == tenant_id, Role.name == role_name)
             admin_role = (await db.execute(stmt)).scalars().first()
             if not admin_role:
@@ -269,8 +269,6 @@ class CRUDTenant(CRUDPlus[Tenant]):
             await self.replace_role_menus(db, admin_role.id, tenant_id, menu_ids)
             await user_cache_manager.clear_by_role_id(db, [admin_role.id])
             return True
-        finally:
-            ctx.tenant_id = current_tenant_id
 
     async def init_related_data(
         self,
@@ -292,9 +290,7 @@ class CRUDTenant(CRUDPlus[Tenant]):
         :param menu_ids: 菜单 ID 列表
         :return:
         """
-        current_tenant_id = ctx.tenant_id
-        ctx.tenant_id = tenant.id
-        try:
+        with tenant_context(tenant.id):
             dept = Dept(
                 name=tenant.name,
                 sort=0,
@@ -340,8 +336,6 @@ class CRUDTenant(CRUDPlus[Tenant]):
                 .where(Tenant.id == tenant.id)
                 .values(admin_user_id=admin_user.id, admin_username=admin_username)
             )
-        finally:
-            ctx.tenant_id = current_tenant_id
 
 
 tenant_dao: CRUDTenant = CRUDTenant(Tenant)
