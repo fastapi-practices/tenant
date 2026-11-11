@@ -11,6 +11,35 @@ from backend.plugin.tenant.crud.crud_package import tenant_package_dao
 from backend.plugin.tenant.crud.crud_tenant import tenant_dao
 from backend.plugin.tenant.model import Tenant
 from backend.plugin.tenant.schema.tenant import CreateTenantParam, DeleteTenantParam, UpdateTenantParam
+from backend.utils.timezone import timezone
+
+
+async def check_tenant_status(*, db: AsyncSession, tenant_id: int) -> None:
+    """
+    校验租户状态
+
+    默认租户不做校验，其余租户需存在、未禁用、未过期且套餐未禁用
+
+    :param db: 数据库会话
+    :param tenant_id: 租户 ID
+    :return:
+    """
+    if tenant_id == settings.TENANT_DEFAULT_ID:
+        return
+
+    tenant = await tenant_dao.get(db, tenant_id)
+    if not tenant:
+        raise errors.NotFoundError(msg='租户不存在，请联系系统管理员')
+
+    if tenant.status == 0:
+        raise errors.AuthorizationError(msg='租户已被禁用，请联系系统管理员')
+
+    if tenant.expire_time and tenant.expire_time < timezone.now():
+        raise errors.AuthorizationError(msg='租户已过期，请联系系统管理员')
+
+    package = await tenant_package_dao.get(db, tenant.package_id)
+    if package and package.status == 0:
+        raise errors.AuthorizationError(msg='租户套餐已被禁用，请联系系统管理员')
 
 
 class TenantService:

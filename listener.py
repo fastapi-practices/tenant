@@ -1,8 +1,7 @@
 from sqlalchemy import event
 from sqlalchemy.orm import ORMExecuteState, Session, with_loader_criteria
 
-from backend.common.context import ctx
-from backend.common.model import TenantMixin
+from backend.common.tenant import TenantMixin, current_tenant_id
 from backend.core.conf import settings
 
 
@@ -16,7 +15,7 @@ def register_tenant_sqlalchemy_listeners() -> None:
             return
         if not settings.TENANT_ENABLED:
             return
-        tenant_id = ctx.tenant_id
+        tenant_id = current_tenant_id()
         orm_execute_state.statement = orm_execute_state.statement.options(
             with_loader_criteria(
                 TenantMixin,
@@ -26,9 +25,9 @@ def register_tenant_sqlalchemy_listeners() -> None:
         )
 
     @event.listens_for(TenantMixin, 'before_insert', propagate=True)
-    def _inject_tenant_id(mapper, connection, target) -> None:  # noqa: ANN001
+    def _inject_tenant_id(mapper, connection, target) -> None:  # ruff: ignore[missing-type-function-argument]
         """为新增加载租户 ID"""
         if not settings.TENANT_ENABLED:
             return
         if hasattr(target, 'tenant_id') and target.tenant_id is None:
-            target.tenant_id = ctx.tenant_id
+            target.tenant_id = current_tenant_id()
